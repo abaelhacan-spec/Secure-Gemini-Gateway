@@ -5,7 +5,8 @@
  * Nabih AI English Teacher - API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { GeneratedExercise } from './generatedExercise';
 
-export interface HealthStatus {
-  status: string;
+export interface ExerciseGenerateResult {
+  exercises: GeneratedExercise[];
 }

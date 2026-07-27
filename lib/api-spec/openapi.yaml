@@ -3,13 +3,16 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Nabih AI English Teacher - API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: ai
+    description: AI Teacher operations (Gemini-powered, server-side only)
+
 paths:
   /healthz:
     get:
@@ -24,6 +27,203 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /ai/sentence-correct:
+    post:
+      operationId: aiSentenceCorrect
+      tags: [ai]
+      summary: Correct a user's English sentence
+      description: |
+        Uses Gemini to correct grammar and vocabulary in a user's sentence.
+        Returns corrected text, explanation, and matched grammar pattern.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SentenceCorrectInput"
+      responses:
+        "200":
+          description: Correction result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SentenceCorrectResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
+  /ai/word-explain:
+    post:
+      operationId: aiWordExplain
+      tags: [ai]
+      summary: Explain a word with examples
+      description: |
+        Uses Gemini to explain a word definition and generate contextual examples
+        appropriate for the user's current level.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WordExplainInput"
+      responses:
+        "200":
+          description: Word explanation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WordExplainResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
+  /ai/conversation-turn:
+    post:
+      operationId: aiConversationTurn
+      tags: [ai]
+      summary: Get AI teacher response in conversation
+      description: |
+        Returns Nabih's next conversational turn. Keeps vocabulary within the
+        user's level and avoids repeating known mistake patterns.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationTurnInput"
+      responses:
+        "200":
+          description: AI conversation reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationTurnResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
+  /ai/journal-daily-report:
+    post:
+      operationId: aiJournalDailyReport
+      tags: [ai]
+      summary: Generate daily learning journal report
+      description: |
+        Generates a personalized daily report in Nabih's voice summarizing
+        what the user learned today.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalReportInput"
+      responses:
+        "200":
+          description: Daily report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalReportResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
+  /ai/grammar-detect:
+    post:
+      operationId: aiGrammarDetect
+      tags: [ai]
+      summary: Detect grammar error patterns in a sentence
+      description: |
+        Detects known grammar mistake patterns in a sentence.
+        Only returns patterns from a predefined list — never invents new ones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrammarDetectInput"
+      responses:
+        "200":
+          description: Grammar detection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarDetectResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
+  /ai/exercise-generate:
+    post:
+      operationId: aiExerciseGenerate
+      tags: [ai]
+      summary: Generate exercises for a learning module
+      description: |
+        Generates vocabulary and grammar exercises based on the current module's
+        content. Results are cacheable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExerciseGenerateInput"
+      responses:
+        "200":
+          description: Generated exercises
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseGenerateResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
+  /ai/exam-evaluate:
+    post:
+      operationId: aiExamEvaluate
+      tags: [ai]
+      summary: Evaluate writing or conversation for level exam
+      description: |
+        Evaluates user's writing or conversation performance against level criteria.
+        Returns a score, strengths, and areas for improvement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExamEvaluateInput"
+      responses:
+        "200":
+          description: Evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExamEvaluateResult"
+        "503":
+          description: AI service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIError"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +234,308 @@ components:
       required:
         - status
 
+    # ─── Shared Types ───────────────────────────────────────────────────────
+
+    UserMemorySnapshot:
+      type: object
+      description: |
+        Compressed user context passed to AI calls. Built from local SQLite data
+        by the Expo app. Maximum ~500 tokens.
+      properties:
+        userLevel:
+          type: string
+          description: "Current CEFR level (e.g. A1, A2, B1)"
+        goal:
+          type: string
+          description: "Learning goal (e.g. Work English, Travel)"
+        recentWords:
+          type: array
+          items:
+            type: string
+          description: "Last 20 active vocabulary words"
+        frequentMistakes:
+          type: array
+          items:
+            type: string
+          description: "Recurring grammar mistake patterns (occurrences >= 2)"
+        currentModule:
+          type: string
+          description: "Name of the active module"
+        lastSessionSummary:
+          type: ["string", "null"]
+          description: "Brief summary of the last learning session"
+      required:
+        - userLevel
+        - goal
+        - recentWords
+        - frequentMistakes
+        - currentModule
+        - lastSessionSummary
+
+    ConversationMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required:
+        - role
+        - content
+
+    GeneratedExercise:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [fill-blank, multiple-choice, translate, reorder]
+        question:
+          type: string
+        options:
+          type: ["array", "null"]
+          items:
+            type: string
+        answer:
+          type: string
+      required:
+        - type
+        - question
+        - options
+        - answer
+
+    AIError:
+      type: object
+      properties:
+        error:
+          type: string
+        fallback:
+          type: string
+          description: "User-friendly fallback message"
+      required:
+        - error
+        - fallback
+
+    # ─── Request Bodies ─────────────────────────────────────────────────────
+
+    SentenceCorrectInput:
+      type: object
+      properties:
+        sentence:
+          type: string
+          minLength: 1
+        userMemory:
+          $ref: "#/components/schemas/UserMemorySnapshot"
+      required:
+        - sentence
+        - userMemory
+
+    WordExplainInput:
+      type: object
+      properties:
+        word:
+          type: string
+          minLength: 1
+        userMemory:
+          $ref: "#/components/schemas/UserMemorySnapshot"
+      required:
+        - word
+        - userMemory
+
+    ConversationTurnInput:
+      type: object
+      properties:
+        userMessage:
+          type: string
+          minLength: 1
+        conversationHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
+        userMemory:
+          $ref: "#/components/schemas/UserMemorySnapshot"
+      required:
+        - userMessage
+        - conversationHistory
+        - userMemory
+
+    JournalReportInput:
+      type: object
+      properties:
+        wordsLearnedToday:
+          type: array
+          items:
+            type: string
+        mistakesMadeToday:
+          type: array
+          items:
+            type: string
+        sentencesWritten:
+          type: integer
+        streakDays:
+          type: integer
+        userMemory:
+          $ref: "#/components/schemas/UserMemorySnapshot"
+      required:
+        - wordsLearnedToday
+        - mistakesMadeToday
+        - sentencesWritten
+        - streakDays
+        - userMemory
+
+    GrammarDetectInput:
+      type: object
+      properties:
+        sentence:
+          type: string
+          minLength: 1
+        knownPatterns:
+          type: array
+          items:
+            type: string
+          description: "List of grammar patterns to check against"
+      required:
+        - sentence
+        - knownPatterns
+
+    ExerciseGenerateInput:
+      type: object
+      properties:
+        moduleTitle:
+          type: string
+        targetWords:
+          type: array
+          items:
+            type: string
+        grammarFocus:
+          type: ["string", "null"]
+        userMemory:
+          $ref: "#/components/schemas/UserMemorySnapshot"
+      required:
+        - moduleTitle
+        - targetWords
+        - grammarFocus
+        - userMemory
+
+    ExamEvaluateInput:
+      type: object
+      properties:
+        evaluationType:
+          type: string
+          enum: [writing, conversation]
+        content:
+          type: string
+          description: "The user's text or conversation transcript to evaluate"
+        criteria:
+          type: string
+          description: "Level-specific evaluation criteria"
+        userMemory:
+          $ref: "#/components/schemas/UserMemorySnapshot"
+      required:
+        - evaluationType
+        - content
+        - criteria
+        - userMemory
+
+    # ─── Response Types ──────────────────────────────────────────────────────
+
+    SentenceCorrectResult:
+      type: object
+      properties:
+        correctedText:
+          type: string
+        explanation:
+          type: string
+        matchedGrammarPattern:
+          type: ["string", "null"]
+        isCorrect:
+          type: boolean
+      required:
+        - correctedText
+        - explanation
+        - matchedGrammarPattern
+        - isCorrect
+
+    WordExplainResult:
+      type: object
+      properties:
+        definition:
+          type: string
+        arabicTranslation:
+          type: string
+        examples:
+          type: array
+          items:
+            type: string
+        tip:
+          type: ["string", "null"]
+      required:
+        - definition
+        - arabicTranslation
+        - examples
+        - tip
+
+    ConversationTurnResult:
+      type: object
+      properties:
+        reply:
+          type: string
+        suggestedResponse:
+          type: ["string", "null"]
+          description: "Optional hint for what the user could say next"
+      required:
+        - reply
+        - suggestedResponse
+
+    JournalReportResult:
+      type: object
+      properties:
+        report:
+          type: string
+          description: "Personalized daily report in Nabih's voice"
+      required:
+        - report
+
+    GrammarDetectResult:
+      type: object
+      properties:
+        matchedPattern:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+      required:
+        - matchedPattern
+        - description
+
+    ExerciseGenerateResult:
+      type: object
+      properties:
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeneratedExercise"
+      required:
+        - exercises
+
+    ExamEvaluateResult:
+      type: object
+      properties:
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        feedback:
+          type: string
+      required:
+        - score
+        - strengths
+        - weaknesses
+        - feedback
