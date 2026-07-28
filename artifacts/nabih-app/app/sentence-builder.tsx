@@ -11,7 +11,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import colors from '@/constants/colors';
 import { useApp } from '@/src/context/AppContext';
 import { recordMistakePattern, upsertTodayJournal, getTodayJournal } from '@/src/db/database';
-import { useAiSentenceCorrect } from '@workspace/api-client-react';
+import { useAiSentenceCorrect } from '@/lib/ai/hooks'
 
 interface CorrectionResult {
   correctedText: string;
