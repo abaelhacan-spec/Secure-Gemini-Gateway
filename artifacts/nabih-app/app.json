@@ -16,7 +16,9 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {},
+    "android": {
+      "package": "com.hussein.nabihapp"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
@@ -33,6 +35,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2c960175-bc02-4970-8243-84c1539dc556"
+      }
     }
   }
 }
