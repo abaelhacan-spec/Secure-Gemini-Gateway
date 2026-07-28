@@ -11,7 +11,7 @@ import colors from '@/constants/colors';
 import { getModuleById, type SeedWord } from '@/src/db/seed';
 import { getDb, updateWordStage, upsertTodayJournal, getTodayJournal } from '@/src/db/database';
 import { useApp } from '@/src/context/AppContext';
-import { useAiWordExplain, useAiGrammarDetect } from '@workspace/api-client-react';
+import { useAiWordExplain, useAiGrammarDetect } from '@/lib/ai/hooks';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 48;
