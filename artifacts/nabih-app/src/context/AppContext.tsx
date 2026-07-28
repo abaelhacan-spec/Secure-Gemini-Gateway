@@ -16,7 +16,7 @@ import {
   type UserProfile,
 } from '../db/database';
 import { CURRICULUM, type Module } from '../db/seed';
-import type { UserMemorySnapshot } from '@workspace/api-client-react';
+import type { UserMemorySnapshot } from '@/lib/ai/prompts';
 
 const CURRENT_MODULE_KEY = '@nabih/currentModuleId';
 const TODAY_WORDS_KEY = '@nabih/todayWords';
