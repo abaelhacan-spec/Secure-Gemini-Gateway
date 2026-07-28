@@ -13,11 +13,10 @@ import {
 } from '@expo-google-fonts/inter';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { setBaseUrl } from '@workspace/api-client-react';
 import { AppProvider } from '@/src/context/AppContext';
 
-// Configure base URL for API calls — Expo runs outside the web proxy
-setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
+// No backend base URL needed anymore — the app talks to Gemini directly
+// using the user's own API key (see lib/ai/geminiClient.ts).
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -46,6 +45,10 @@ function RootLayoutNav() {
       />
       <Stack.Screen
         name="sentence-builder"
+        options={{ presentation: 'modal', headerShown: false }}
+      />
+      <Stack.Screen
+        name="settings"
         options={{ presentation: 'modal', headerShown: false }}
       />
     </Stack>
