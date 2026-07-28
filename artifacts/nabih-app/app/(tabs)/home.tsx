@@ -60,7 +60,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16, backgroundColor: theme.primary }]}>
           <View style={styles.headerTop}>
-            <Pressable style={[styles.avatarBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+            <Pressable onPress={() => router.push('/settings')} style={[styles.avatarBtn, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
               <Text style={styles.avatarText}>🦉</Text>
             </Pressable>
             <View style={styles.headerGreeting}>

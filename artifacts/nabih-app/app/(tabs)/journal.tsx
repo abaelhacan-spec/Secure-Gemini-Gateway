@@ -8,7 +8,7 @@ import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
 import { getJournalEntries, upsertTodayJournal, type JournalEntry } from '@/src/db/database';
 import { useApp } from '@/src/context/AppContext';
-import { useAiJournalDailyReport } from '@workspace/api-client-react';
+import { useAiJournalDailyReport } from '@/lib/ai/hooks';
 
 export default function JournalScreen() {
   const insets = useSafeAreaInsets();

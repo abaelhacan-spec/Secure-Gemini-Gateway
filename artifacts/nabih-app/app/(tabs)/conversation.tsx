@@ -12,7 +12,7 @@ import {
   getConversationHistory, addConversationMessage,
   type ConversationMessage,
 } from '@/src/db/database';
-import { useAiConversationTurn } from '@workspace/api-client-react';
+import { useAiConversationTurn } from '@/lib/ai/hooks';
 
 const SESSION_ID = `session-${new Date().toISOString().split('T')[0]}`;
 
