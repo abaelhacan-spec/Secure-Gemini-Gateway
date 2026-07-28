@@ -156,7 +156,7 @@ export default function LessonScreen() {
 
   const flipStyle = {
     transform: [{
-      rotateY: flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }),
+      rotateY: flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }),
     }],
   };
 
