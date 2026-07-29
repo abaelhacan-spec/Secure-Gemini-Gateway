@@ -57,6 +57,12 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string | n
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          // Ask Gemini to return raw JSON directly — avoids markdown code
+          // fences / preamble text that made client-side parsing fragile.
+          responseMimeType: 'application/json',
+          maxOutputTokens: 2048,
+        },
       }),
       signal: controller.signal,
     });
@@ -70,7 +76,15 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string | n
     }
 
     const data = await response.json();
-    const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidate = data?.candidates?.[0];
+    const text: string | undefined = candidate?.content?.parts?.[0]?.text;
+
+    if (candidate?.finishReason === 'MAX_TOKENS') {
+      // Response got cut off before completing — treat as unavailable
+      // rather than trying to parse a truncated JSON object.
+      return null;
+    }
+
     return text ?? null;
   } catch (err) {
     if (err instanceof Error && err.message.includes('غير صالح')) throw err;
@@ -80,12 +94,23 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string | n
   }
 }
 
+function extractJSON(text: string): string {
+  // Safety net: even with responseMimeType set, be lenient about stray
+  // whitespace or an occasional wrapped response.
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = fenced ? fenced[1] : trimmed;
+  const firstBrace = candidate.indexOf('{');
+  const lastBrace = candidate.lastIndexOf('}');
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) return candidate;
+  return candidate.slice(firstBrace, lastBrace + 1);
+}
+
 async function generateJSON<T>(prompt: string, timeoutMs = 20_000): Promise<T | null> {
   const text = await callGemini(prompt, timeoutMs);
   if (!text) return null;
   try {
-    const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-    return JSON.parse(cleaned) as T;
+    return JSON.parse(extractJSON(text)) as T;
   } catch {
     return null;
   }
