@@ -103,12 +103,15 @@ export default function ConversationScreen() {
         };
         setMessages((prev) => [suggestionMsg, ...prev]);
       }
-    } catch {
+    } catch (error) {
+      const realMessage = error instanceof Error && error.message
+        ? error.message
+        : 'حدث خطأ غير متوقع.';
       const errMsg: ConversationMessage = {
         id: (Date.now() + 1).toString(),
         sessionId: SESSION_ID,
         role: 'assistant',
-        content: 'أنت غير متصل الآن. سأرد عليك فور عودة الاتصال 🔌',
+        content: `⚠️ ${realMessage}`,
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [errMsg, ...prev]);
