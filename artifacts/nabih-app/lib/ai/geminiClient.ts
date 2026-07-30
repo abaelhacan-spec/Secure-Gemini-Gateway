@@ -68,27 +68,45 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string | n
     });
 
     if (!response.ok) {
-      // 400 with API_KEY_INVALID is Google's way of saying the key is bad
       if (response.status === 400 || response.status === 403) {
-        throw new Error('مفتاح Gemini API غير صالح. تحقق منه في الإعدادات.');
+        throw new Error('مفتاح Gemini API غير صالح أو غير مصرّح له. تحقق منه في الإعدادات.');
       }
-      return null;
+      if (response.status === 429) {
+        throw new Error('تم تجاوز حصة الاستخدام المسموحة لمفتاحك (Quota Exceeded). حاول لاحقًا أو تحقق من خطتك في Google AI Studio.');
+      }
+      if (response.status >= 500) {
+        throw new Error('خادم Gemini يواجه مشكلة مؤقتة حاليًا. حاول بعد قليل.');
+      }
+      let bodyText = '';
+      try { bodyText = await response.text(); } catch {}
+      throw new Error(`خطأ من Gemini (HTTP ${response.status}): ${bodyText.slice(0, 200)}`);
     }
 
     const data = await response.json();
-    const candidate = data?.candidates?.[0];
-    const text: string | undefined = candidate?.content?.parts?.[0]?.text;
 
-    if (candidate?.finishReason === 'MAX_TOKENS') {
-      // Response got cut off before completing — treat as unavailable
-      // rather than trying to parse a truncated JSON object.
-      return null;
+    if (data?.promptFeedback?.blockReason) {
+      throw new Error(`تم حظر الرد من Gemini لأسباب تتعلق بالسلامة (${data.promptFeedback.blockReason}).`);
     }
 
-    return text ?? null;
+    const candidate = data?.candidates?.[0];
+
+    if (candidate?.finishReason === 'MAX_TOKENS') {
+      throw new Error('انقطع رد Gemini قبل اكتماله (تجاوز الحد الأقصى للطول).');
+    }
+    if (candidate?.finishReason === 'SAFETY') {
+      throw new Error('تم إيقاف الرد من Gemini بسبب فلاتر السلامة.');
+    }
+
+    const text: string | undefined = candidate?.content?.parts?.[0]?.text;
+    if (!text) {
+      throw new Error('رد Gemini لم يحتوِ على نص قابل للقراءة.');
+    }
+    return text;
   } catch (err) {
-    if (err instanceof Error && err.message.includes('غير صالح')) throw err;
-    return null;
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('انتهت مهلة الاتصال بـ Gemini. تحقق من اتصالك بالإنترنت.');
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
