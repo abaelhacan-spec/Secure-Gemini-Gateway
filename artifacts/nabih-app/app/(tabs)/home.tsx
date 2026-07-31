@@ -10,6 +10,7 @@ import colors from '@/constants/colors';
 import { useApp } from '@/src/context/AppContext';
 import { getWords, getTodayJournal } from '@/src/db/database';
 import { CURRICULUM } from '@/src/db/seed';
+import { DAILY_MODULE_ID } from '@/src/db/dailyWords';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -115,6 +116,38 @@ export default function HomeScreen() {
         {/* All modules */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>وحدات المنهج</Text>
+
+          {/* Daily Oxford 3000 words — a new batch of 10 words every day */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.moduleCard,
+              {
+                backgroundColor: currentModule?.id === DAILY_MODULE_ID ? theme.primarySoft : theme.surface,
+                borderColor: currentModule?.id === DAILY_MODULE_ID ? theme.primary : theme.border,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: DAILY_MODULE_ID } });
+            }}
+          >
+            <View style={styles.moduleCardContent}>
+              <View style={styles.moduleCardRight}>
+                {currentModule?.id === DAILY_MODULE_ID && (
+                  <View style={[styles.currentBadge, { backgroundColor: theme.primary }]}>
+                    <Text style={styles.currentBadgeText}>الحالي</Text>
+                  </View>
+                )}
+                <Text style={[styles.moduleTitle, { color: theme.text }]}>🔄 كلمات اليوم</Text>
+                <Text style={[styles.moduleSub, { color: theme.textSecondary }]}>
+                  10 كلمات جديدة من قائمة Oxford 3000 • تتجدد كل يوم
+                </Text>
+              </View>
+              <Feather name="chevron-left" size={20} color={currentModule?.id === DAILY_MODULE_ID ? theme.primary : theme.muted} />
+            </View>
+          </Pressable>
+
           {CURRICULUM.map((module) => {
             const isCurrent = module.id === currentModule?.id;
             return (
