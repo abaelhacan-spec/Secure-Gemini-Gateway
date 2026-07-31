@@ -16,6 +16,7 @@ import {
   type UserProfile,
 } from '../db/database';
 import { CURRICULUM, type Module } from '../db/seed';
+import { getDailyModule, DAILY_MODULE_ID } from '../db/dailyWords';
 import type { UserMemorySnapshot } from '@/lib/ai/prompts';
 
 const CURRENT_MODULE_KEY = '@nabih/currentModuleId';
@@ -56,6 +57,16 @@ const AppContext = createContext<AppState>({
   updateStreak: async () => {},
 });
 
+// Resolves a moduleId to a Module. The daily Oxford-3000 module is built
+// dynamically (a fresh set of 10 words per day); the rest come from the
+// static CURRICULUM.
+async function resolveModule(moduleId: string | null): Promise<Module | null> {
+  if (moduleId === DAILY_MODULE_ID) {
+    return getDailyModule();
+  }
+  return CURRICULUM.find((m) => m.id === moduleId) ?? null;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -75,10 +86,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const profile = await getUserProfile();
       setUserProfile(profile);
 
-      // Load current module
+      // Load current module — default to the daily Oxford-3000 module so a
+      // fresh set of words is shown instead of always the same fixed module.
       const moduleId = await AsyncStorage.getItem(CURRENT_MODULE_KEY);
-      const module = CURRICULUM.find((m) => m.id === moduleId) ?? CURRICULUM[0] ?? null;
-      setCurrentModuleState(module);
+      const module = await resolveModule(moduleId ?? DAILY_MODULE_ID);
+      setCurrentModuleState(module ?? (await getDailyModule()));
 
       // Load today word count
       const today = new Date().toISOString().split('T')[0];
@@ -112,14 +124,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       onboardingCompleted: true,
       lastSessionDate: new Date().toISOString(),
     });
-    await AsyncStorage.setItem(CURRENT_MODULE_KEY, CURRICULUM[0]?.id ?? '');
-    setCurrentModuleState(CURRICULUM[0] ?? null);
+    await AsyncStorage.setItem(CURRENT_MODULE_KEY, DAILY_MODULE_ID);
+    setCurrentModuleState(await getDailyModule());
     await refreshProfile();
   }, [refreshProfile]);
 
   const setCurrentModule = useCallback(async (moduleId: string) => {
     await AsyncStorage.setItem(CURRENT_MODULE_KEY, moduleId);
-    const module = CURRICULUM.find((m) => m.id === moduleId) ?? null;
+    const module = await resolveModule(moduleId);
     setCurrentModuleState(module);
   }, []);
 
