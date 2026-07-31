@@ -8,7 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
-import { getModuleById, type SeedWord } from '@/src/db/seed';
+import { getModuleById, type SeedWord, type Module } from '@/src/db/seed';
+import { getDailyModule, DAILY_MODULE_ID } from '@/src/db/dailyWords';
 import { getDb, updateWordStage, upsertTodayJournal, getTodayJournal } from '@/src/db/database';
 import { useApp } from '@/src/context/AppContext';
 import { useAiWordExplain, useAiGrammarDetect } from '@/lib/ai/hooks';
@@ -23,7 +24,10 @@ export default function LessonScreen() {
   const { moduleId } = useLocalSearchParams<{ moduleId: string }>();
   const { buildMemorySnapshot, updateStreak } = useApp();
 
-  const module = getModuleById(moduleId ?? '');
+  const isDaily = moduleId === DAILY_MODULE_ID;
+  const [module, setModule] = useState<Module | null | undefined>(
+    isDaily ? undefined : getModuleById(moduleId ?? '')
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<'word' | 'reveal' | 'complete'>('word');
   const [explanation, setExplanation] = useState<{ definition: string; arabicTranslation: string; examples: string[]; tip: string | null } | null>(null);
@@ -35,11 +39,21 @@ export default function LessonScreen() {
   const swipeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (module) {
-      ensureWordsInDb(module.words);
+    let cancelled = false;
+    async function loadModule() {
+      const resolved = isDaily ? await getDailyModule() : getModuleById(moduleId ?? '');
+      if (cancelled) return;
+      setModule(resolved ?? null);
+      if (resolved) {
+        ensureWordsInDb(resolved.words);
+      }
     }
+    loadModule();
     updateStreak();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleId]);
 
   const ensureWordsInDb = async (words: SeedWord[]) => {
     const db = getDb();
@@ -117,6 +131,14 @@ export default function LessonScreen() {
       setCurrentIndex((i) => i + 1);
     }
   }, [module, currentWord, learnedToday, currentIndex]);
+
+  if (module === undefined) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
 
   if (!module) {
     return (
