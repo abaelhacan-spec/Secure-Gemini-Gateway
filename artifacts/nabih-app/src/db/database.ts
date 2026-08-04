@@ -35,10 +35,13 @@ export async function initDatabase(): Promise<void> {
       word TEXT NOT NULL,
       arabic_translation TEXT,
       definition TEXT,
+      examples TEXT,
       module_id TEXT NOT NULL,
       lifecycle_stage TEXT NOT NULL DEFAULT 'new',
       used_in_sentence_count INTEGER NOT NULL DEFAULT 0,
       used_in_conversation_count INTEGER NOT NULL DEFAULT 0,
+      review_interval_days INTEGER NOT NULL DEFAULT 0,
+      next_review_at TEXT,
       learned_at TEXT,
       last_mistake_at TEXT,
       reviewed_after_mistake INTEGER NOT NULL DEFAULT 0,
@@ -87,6 +90,22 @@ export async function initDatabase(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // Migrate existing installs (columns above only apply to brand-new DBs).
+  // Each ALTER TABLE is wrapped individually since SQLite errors if the
+  // column already exists, and there's no portable "ADD COLUMN IF NOT EXISTS".
+  const migrations = [
+    `ALTER TABLE words ADD COLUMN examples TEXT`,
+    `ALTER TABLE words ADD COLUMN review_interval_days INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE words ADD COLUMN next_review_at TEXT`,
+  ];
+  for (const migration of migrations) {
+    try {
+      await db.execAsync(migration);
+    } catch {
+      // Column already exists — safe to ignore.
+    }
+  }
 
   // Ensure user profile row exists
   await db.runAsync(
@@ -152,20 +171,23 @@ export interface Word {
   word: string;
   arabicTranslation: string | null;
   definition: string | null;
+  examples: string[];
   moduleId: string;
   lifecycleStage: 'new' | 'learned' | 'reviewed' | 'usedInSentence' | 'usedInConversation' | 'mastered' | 'needsReview';
   usedInSentenceCount: number;
   usedInConversationCount: number;
   learnedAt: string | null;
+  reviewIntervalDays: number;
+  nextReviewAt: string | null;
 }
 
 export async function getWords(moduleId?: string): Promise<Word[]> {
   const db = getDb();
   const rows = await db.getAllAsync<{
     id: string; word: string; arabic_translation: string | null;
-    definition: string | null; module_id: string; lifecycle_stage: string;
+    definition: string | null; examples: string | null; module_id: string; lifecycle_stage: string;
     used_in_sentence_count: number; used_in_conversation_count: number;
-    learned_at: string | null;
+    learned_at: string | null; review_interval_days: number; next_review_at: string | null;
   }>(
     moduleId
       ? 'SELECT * FROM words WHERE module_id = ? ORDER BY created_at DESC'
@@ -173,14 +195,45 @@ export async function getWords(moduleId?: string): Promise<Word[]> {
     moduleId ? [moduleId] : []
   );
 
-  return rows.map((r) => ({
+  return rows.map(rowToWord);
+}
+
+function rowToWord(r: {
+  id: string; word: string; arabic_translation: string | null;
+  definition: string | null; examples: string | null; module_id: string; lifecycle_stage: string;
+  used_in_sentence_count: number; used_in_conversation_count: number;
+  learned_at: string | null; review_interval_days: number; next_review_at: string | null;
+}): Word {
+  let examples: string[] = [];
+  try {
+    examples = r.examples ? JSON.parse(r.examples) : [];
+  } catch {
+    examples = [];
+  }
+  return {
     id: r.id, word: r.word, arabicTranslation: r.arabic_translation,
-    definition: r.definition, moduleId: r.module_id,
+    definition: r.definition, examples, moduleId: r.module_id,
     lifecycleStage: r.lifecycle_stage as Word['lifecycleStage'],
     usedInSentenceCount: r.used_in_sentence_count,
     usedInConversationCount: r.used_in_conversation_count,
     learnedAt: r.learned_at,
-  }));
+    reviewIntervalDays: r.review_interval_days ?? 0,
+    nextReviewAt: r.next_review_at,
+  };
+}
+
+/** Fetches DB rows for a specific set of word ids (e.g. today's 10 daily words). */
+export async function getWordsByIds(ids: string[]): Promise<Word[]> {
+  if (ids.length === 0) return [];
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<{
+    id: string; word: string; arabic_translation: string | null;
+    definition: string | null; examples: string | null; module_id: string; lifecycle_stage: string;
+    used_in_sentence_count: number; used_in_conversation_count: number;
+    learned_at: string | null; review_interval_days: number; next_review_at: string | null;
+  }>(`SELECT * FROM words WHERE id IN (${placeholders})`, ids);
+  return rows.map(rowToWord);
 }
 
 export async function updateWordStage(wordId: string, stage: Word['lifecycleStage']): Promise<void> {
@@ -191,6 +244,131 @@ export async function updateWordStage(wordId: string, stage: Word['lifecycleStag
   } else {
     await db.runAsync('UPDATE words SET lifecycle_stage = ? WHERE id = ?', [stage, wordId]);
   }
+}
+
+/** Caches the AI-generated definition/translation/examples for a word so
+ * later stages (Practice) can build exercises locally without another
+ * Gemini call. */
+export async function saveWordExplanation(
+  wordId: string,
+  data: { definition: string; arabicTranslation: string; examples: string[] }
+): Promise<void> {
+  const db = getDb();
+  await db.runAsync(
+    'UPDATE words SET definition = ?, arabic_translation = ?, examples = ? WHERE id = ?',
+    [data.definition, data.arabicTranslation, JSON.stringify(data.examples), wordId]
+  );
+}
+
+// ─── Spaced Repetition (word_reviews + lifecycle_stage) ──────────────────────
+// Fixed review schedule: day 1 → day 3 → day 7 → day 14 → day 30.
+// A word that passes the day-30 review is marked "mastered". Any incorrect
+// review resets it back to the first interval instead of removing it.
+export const SRS_INTERVALS_DAYS = [1, 3, 7, 14, 30];
+
+function addDaysIso(days: number): string {
+  return new Date(Date.now() + days * 86400000).toISOString();
+}
+
+/** Called once, when a word finishes today's Learn → Practice → Writing
+ * flow for the first time. Enrolls it in the spaced-repetition queue. */
+export async function completeInitialLearning(wordId: string): Promise<void> {
+  const db = getDb();
+  const firstInterval = SRS_INTERVALS_DAYS[0];
+  await db.runAsync(
+    `UPDATE words
+     SET lifecycle_stage = 'learned', learned_at = datetime('now'),
+         review_interval_days = ?, next_review_at = ?
+     WHERE id = ?`,
+    [firstInterval, addDaysIso(firstInterval), wordId]
+  );
+}
+
+/** Records the result of a spaced-repetition review and schedules the next one. */
+export async function recordWordReview(
+  wordId: string,
+  result: 'correct' | 'incorrect'
+): Promise<{ lifecycleStage: Word['lifecycleStage']; nextReviewAt: string }> {
+  const db = getDb();
+  const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  await db.runAsync(
+    'INSERT INTO word_reviews (id, word_id, result) VALUES (?, ?, ?)',
+    [id, wordId, result]
+  );
+
+  const row = await db.getFirstAsync<{ review_interval_days: number }>(
+    'SELECT review_interval_days FROM words WHERE id = ?',
+    [wordId]
+  );
+  const currentIndex = SRS_INTERVALS_DAYS.indexOf(row?.review_interval_days ?? 0);
+
+  let nextIntervalDays: number;
+  let lifecycleStage: Word['lifecycleStage'];
+
+  if (result === 'correct') {
+    const nextIndex = Math.min(currentIndex + 1, SRS_INTERVALS_DAYS.length - 1);
+    const reachedFinalInterval = currentIndex >= SRS_INTERVALS_DAYS.length - 1;
+    nextIntervalDays = SRS_INTERVALS_DAYS[nextIndex];
+    lifecycleStage = reachedFinalInterval ? 'mastered' : 'learned';
+  } else {
+    nextIntervalDays = SRS_INTERVALS_DAYS[0];
+    lifecycleStage = 'learned';
+  }
+
+  const nextReviewAt = addDaysIso(nextIntervalDays);
+  await db.runAsync(
+    'UPDATE words SET review_interval_days = ?, next_review_at = ?, lifecycle_stage = ? WHERE id = ?',
+    [nextIntervalDays, nextReviewAt, lifecycleStage, wordId]
+  );
+
+  return { lifecycleStage, nextReviewAt };
+}
+
+/** Words whose next scheduled review is due (today or overdue). */
+export async function getDueReviewWords(limit = 30): Promise<Word[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{
+    id: string; word: string; arabic_translation: string | null;
+    definition: string | null; examples: string | null; module_id: string; lifecycle_stage: string;
+    used_in_sentence_count: number; used_in_conversation_count: number;
+    learned_at: string | null; review_interval_days: number; next_review_at: string | null;
+  }>(
+    `SELECT * FROM words
+     WHERE lifecycle_stage = 'learned' AND next_review_at IS NOT NULL AND next_review_at <= datetime('now')
+     ORDER BY next_review_at ASC LIMIT ?`,
+    [limit]
+  );
+  return rows.map(rowToWord);
+}
+
+/** Overall progress across the whole Oxford 3000 list. */
+export async function getMasteryStats(): Promise<{
+  masteredCount: number;
+  inProgressCount: number;
+  dueReviewCount: number;
+}> {
+  const db = getDb();
+  const mastered = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) as c FROM words WHERE lifecycle_stage = 'mastered'`
+  );
+  const inProgress = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) as c FROM words WHERE lifecycle_stage = 'learned'`
+  );
+  const due = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) as c FROM words
+     WHERE lifecycle_stage = 'learned' AND next_review_at IS NOT NULL AND next_review_at <= datetime('now')`
+  );
+  return {
+    masteredCount: mastered?.c ?? 0,
+    inProgressCount: inProgress?.c ?? 0,
+    dueReviewCount: due?.c ?? 0,
+  };
+}
+
+/** Increments the "used in a sentence" counter for a word (Writing stage). */
+export async function recordWordUsedInSentence(wordId: string): Promise<void> {
+  const db = getDb();
+  await db.runAsync('UPDATE words SET used_in_sentence_count = used_in_sentence_count + 1 WHERE id = ?', [wordId]);
 }
 
 // ─── Mistake Patterns ────────────────────────────────────────────────────────
