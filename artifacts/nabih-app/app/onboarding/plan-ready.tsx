@@ -8,7 +8,6 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
 import { useApp } from '@/src/context/AppContext';
-import { CURRICULUM } from '@/src/db/seed';
 
 const GOAL_LABELS: Record<string, string> = {
   work: 'English للعمل',
@@ -41,8 +40,6 @@ export default function PlanReadyScreen() {
     router.replace('/(tabs)/home');
   };
 
-  const modules = CURRICULUM.slice(0, 3);
-
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.content, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }]}>
@@ -65,16 +62,20 @@ export default function PlanReadyScreen() {
 
           {/* Plan preview */}
           <View style={[styles.planCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.planLabel, { color: theme.textSecondary }]}>ستتعلم في الأسابيع الأولى:</Text>
-            {modules.map((module, index) => (
-              <View key={module.id} style={styles.planRow}>
+            <Text style={[styles.planLabel, { color: theme.textSecondary }]}>كيف يعمل نبيه:</Text>
+            {[
+              { icon: '📖', title: '10 كلمات يوميًا', sub: 'من قائمة Oxford 3000 الأساسية' },
+              { icon: '🎯', title: 'تعلّم وتدرّب واكتب', sub: 'أربع مراحل قصيرة لكل دفعة كلمات' },
+              { icon: '🔁', title: 'مراجعة ذكية متباعدة', sub: 'تعود لكل كلمة في الوقت الأمثل لتثبيتها' },
+            ].map((item, index) => (
+              <View key={item.title} style={styles.planRow}>
                 <View style={[styles.planDot, { backgroundColor: theme.primary }]}>
-                  <Text style={styles.planDotText}>{index + 1}</Text>
+                  <Text style={styles.planDotText}>{item.icon}</Text>
                 </View>
                 <View style={styles.planRowText}>
-                  <Text style={[styles.planModuleTitle, { color: theme.text }]}>{module.titleAr}</Text>
+                  <Text style={[styles.planModuleTitle, { color: theme.text }]}>{item.title}</Text>
                   <Text style={[styles.planModuleCount, { color: theme.textSecondary }]}>
-                    {module.words.length} كلمة
+                    {item.sub}
                   </Text>
                 </View>
               </View>
