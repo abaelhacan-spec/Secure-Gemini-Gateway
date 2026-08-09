@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Speech from 'expo-speech';
 import colors from '@/constants/colors';
 import { getModuleById, type SeedWord, type Module } from '@/src/db/seed';
 import { getDailyModule, DAILY_MODULE_ID } from '@/src/db/dailyWords';
@@ -191,6 +192,14 @@ function LearnStage({
   const flipAnim = useRef(new Animated.Value(0)).current;
   const currentWord = module.words[currentIndex];
 
+  const speak = useCallback((text: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Speech.stop();
+    Speech.speak(text, { language: 'en-US', pitch: 1, rate: 0.9 });
+  }, []);
+
+  useEffect(() => () => { Speech.stop(); }, []);
+
   const handleReveal = useCallback(async () => {
     if (phase !== 'word' || !currentWord) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -215,6 +224,7 @@ function LearnStage({
 
   const handleNext = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Speech.stop();
     flipAnim.setValue(0);
     setExplanation(null);
     setPhase('word');
@@ -238,7 +248,16 @@ function LearnStage({
         <Animated.View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }, phase === 'word' ? {} : flipStyle]}>
           {phase === 'word' ? (
             <View style={styles.cardFront}>
-              <Text style={[styles.wordText, { color: theme.text }]}>{currentWord?.word}</Text>
+              <View style={styles.wordRow}>
+                <Text style={[styles.wordText, { color: theme.text }]}>{currentWord?.word}</Text>
+                <Pressable
+                  onPress={() => currentWord && speak(currentWord.word)}
+                  style={[styles.speakerBtn, { backgroundColor: theme.primarySoft }]}
+                  hitSlop={12}
+                >
+                  <Feather name="volume-2" size={20} color={theme.primary} />
+                </Pressable>
+              </View>
               <Text style={[styles.tapHint, { color: theme.muted }]}>اضغط لرؤية المعنى</Text>
               <View style={[styles.tapIcon, { borderColor: theme.border }]}>
                 <Feather name="eye" size={20} color={theme.primary} />
@@ -250,12 +269,26 @@ function LearnStage({
                 <ActivityIndicator size="large" color={theme.primary} />
               ) : explanation ? (
                 <>
-                  <Text style={[styles.wordBack, { color: theme.text }]}>{currentWord?.word}</Text>
+                  <View style={styles.wordRow}>
+                    <Text style={[styles.wordBack, { color: theme.text }]}>{currentWord?.word}</Text>
+                    <Pressable
+                      onPress={() => currentWord && speak(currentWord.word)}
+                      style={[styles.speakerBtn, { backgroundColor: theme.primarySoft }]}
+                      hitSlop={12}
+                    >
+                      <Feather name="volume-2" size={20} color={theme.primary} />
+                    </Pressable>
+                  </View>
                   <Text style={[styles.arabicTrans, { color: theme.primary }]}>{explanation.arabicTranslation}</Text>
                   <Text style={[styles.definition, { color: theme.textSecondary }]}>{explanation.definition}</Text>
                   {explanation.examples.slice(0, 2).map((ex, i) => (
                     <View key={i} style={[styles.exampleRow, { borderLeftColor: theme.primary }]}>
-                      <Text style={[styles.exampleText, { color: theme.text }]}>"{ex}"</Text>
+                      <View style={styles.exampleRowInner}>
+                        <Text style={[styles.exampleText, { color: theme.text }]}>"{ex}"</Text>
+                        <Pressable onPress={() => speak(ex)} hitSlop={10}>
+                          <Feather name="volume-2" size={16} color={theme.muted} />
+                        </Pressable>
+                      </View>
                     </View>
                   ))}
                   {explanation.tip && (
@@ -743,6 +776,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08, shadowRadius: 16, elevation: 4,
   },
   cardFront: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  wordRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  speakerBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   wordText: { fontSize: 44, fontFamily: 'Inter_700Bold', textAlign: 'center' },
   tapHint: { fontSize: 14, fontFamily: 'Inter_400Regular' },
   tapIcon: {
@@ -754,7 +789,8 @@ const styles = StyleSheet.create({
   arabicTrans: { fontSize: 22, fontFamily: 'Inter_600SemiBold', textAlign: 'center' },
   definition: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'right', lineHeight: 22 },
   exampleRow: { borderLeftWidth: 3, paddingLeft: 12 },
-  exampleText: { fontSize: 14, fontFamily: 'Inter_400Regular', fontStyle: 'italic', lineHeight: 20 },
+  exampleRowInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  exampleText: { fontSize: 14, fontFamily: 'Inter_400Regular', fontStyle: 'italic', lineHeight: 20, flex: 1 },
   tipBox: { padding: 12, borderRadius: colors.radius },
   tipText: { fontSize: 13, fontFamily: 'Inter_500Medium', textAlign: 'right' },
   nextBtn: {
