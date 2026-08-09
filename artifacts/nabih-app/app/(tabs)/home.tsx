@@ -8,27 +8,26 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
 import { useApp } from '@/src/context/AppContext';
-import { getWords, getTodayJournal } from '@/src/db/database';
-import { CURRICULUM } from '@/src/db/seed';
+import { getMasteryStats } from '@/src/db/database';
+import { OXFORD_3000 } from '@/src/db/oxford3000';
 import { DAILY_MODULE_ID } from '@/src/db/dailyWords';
+
+const TOTAL_OXFORD_WORDS = OXFORD_3000.length;
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? colors.dark : colors.light;
-  const { userProfile, currentModule, streakDays, updateStreak, refreshProfile } = useApp();
+  const { currentModule, streakDays, updateStreak, refreshProfile } = useApp();
 
-  const [wordCount, setWordCount] = useState(0);
   const [masteredCount, setMasteredCount] = useState(0);
-  const [todayWordCount, setTodayWordCount] = useState(0);
+  const [dueReviewCount, setDueReviewCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadStats = useCallback(async () => {
-    const words = await getWords();
-    setWordCount(words.length);
-    setMasteredCount(words.filter((w) => w.lifecycleStage === 'mastered').length);
-    const journal = await getTodayJournal();
-    setTodayWordCount(journal?.wordsLearned.length ?? 0);
+    const stats = await getMasteryStats();
+    setMasteredCount(stats.masteredCount);
+    setDueReviewCount(stats.dueReviewCount);
   }, []);
 
   useEffect(() => {
@@ -44,11 +43,15 @@ export default function HomeScreen() {
 
   const handleStartLesson = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (currentModule) {
-      router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: currentModule.id } });
-    }
+    router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: DAILY_MODULE_ID } });
   };
 
+  const handleStartReview = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push('/review');
+  };
+
+  const masteryPercent = TOTAL_OXFORD_WORDS > 0 ? Math.round((masteredCount / TOTAL_OXFORD_WORDS) * 1000) / 10 : 0;
   const todayDate = new Date().toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
@@ -68,14 +71,14 @@ export default function HomeScreen() {
               <Text style={styles.headerDate}>{todayDate}</Text>
               <Text style={styles.headerWelcome}>صباح التعلّم! ☀️</Text>
             </View>
-            {/* Streak */}
+            {/* Daily Streak */}
             <View style={[styles.streakBadge, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
               <Text style={styles.streakFire}>🔥</Text>
               <Text style={styles.streakNum}>{streakDays}</Text>
             </View>
           </View>
 
-          {/* Main lesson card */}
+          {/* Today's 10 words */}
           <Pressable
             style={({ pressed }) => [
               styles.lessonCard,
@@ -84,12 +87,12 @@ export default function HomeScreen() {
             onPress={handleStartLesson}
           >
             <View style={styles.lessonCardLeft}>
-              <Text style={[styles.lessonLabel, { color: theme.primary }]}>الدرس الحالي</Text>
+              <Text style={[styles.lessonLabel, { color: theme.primary }]}>كلمات اليوم</Text>
               <Text style={[styles.lessonTitle, { color: theme.text }]}>
-                {currentModule?.titleAr ?? 'التحيات'}
+                {currentModule?.words.length ?? 10} كلمات من Oxford 3000
               </Text>
               <Text style={[styles.lessonSub, { color: theme.textSecondary }]}>
-                {currentModule?.words.length ?? 10} كلمة • {currentModule?.description}
+                تعلّم • تدرّب • اكتب • تحدّث
               </Text>
             </View>
             <View style={[styles.lessonBtn, { backgroundColor: theme.primary }]}>
@@ -98,94 +101,45 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Stats row */}
+        {/* Today's reviews (spaced repetition) */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.reviewCard,
+            {
+              backgroundColor: dueReviewCount > 0 ? theme.primarySoft : theme.surface,
+              borderColor: dueReviewCount > 0 ? theme.primary : theme.border,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}
+          onPress={handleStartReview}
+        >
+          <View style={[styles.reviewIconWrap, { backgroundColor: dueReviewCount > 0 ? theme.primary : theme.border }]}>
+            <Feather name="rotate-cw" size={18} color={dueReviewCount > 0 ? '#FFFFFF' : theme.muted} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.reviewTitle, { color: theme.text }]}>مراجعات اليوم</Text>
+            <Text style={[styles.reviewSub, { color: theme.textSecondary }]}>
+              {dueReviewCount > 0 ? `${dueReviewCount} كلمة بحاجة لمراجعة سريعة` : 'لا توجد مراجعات مستحقة الآن'}
+            </Text>
+          </View>
+          {dueReviewCount > 0 && <Feather name="chevron-left" size={20} color={theme.primary} />}
+        </Pressable>
+
+        {/* Oxford 3000 mastery stats */}
         <View style={styles.statsRow}>
-          {[
-            { label: 'كلمات تعلّمتها', value: wordCount, icon: 'book-open', color: theme.primary },
-            { label: 'تعلّمتها اليوم', value: todayWordCount, icon: 'star', color: theme.success },
-            { label: 'أتقنتها', value: masteredCount, icon: 'award', color: theme.warning },
-          ].map((stat) => (
-            <View key={stat.label} style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Feather name={stat.icon as any} size={20} color={stat.color} />
-              <Text style={[styles.statValue, { color: theme.text }]}>{stat.value}</Text>
-              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{stat.label}</Text>
-            </View>
-          ))}
+          <View style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Feather name="trending-up" size={20} color={theme.primary} />
+            <Text style={[styles.statValue, { color: theme.text }]}>{masteryPercent}%</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>نسبة إتقان Oxford 3000</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Feather name="award" size={20} color={theme.warning} />
+            <Text style={[styles.statValue, { color: theme.text }]}>{masteredCount}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>كلمة متقنة من {TOTAL_OXFORD_WORDS}</Text>
+          </View>
         </View>
 
-        {/* All modules */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>وحدات المنهج</Text>
-
-          {/* Daily Oxford 3000 words — a new batch of 10 words every day */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.moduleCard,
-              {
-                backgroundColor: currentModule?.id === DAILY_MODULE_ID ? theme.primarySoft : theme.surface,
-                borderColor: currentModule?.id === DAILY_MODULE_ID ? theme.primary : theme.border,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: DAILY_MODULE_ID } });
-            }}
-          >
-            <View style={styles.moduleCardContent}>
-              <View style={styles.moduleCardRight}>
-                {currentModule?.id === DAILY_MODULE_ID && (
-                  <View style={[styles.currentBadge, { backgroundColor: theme.primary }]}>
-                    <Text style={styles.currentBadgeText}>الحالي</Text>
-                  </View>
-                )}
-                <Text style={[styles.moduleTitle, { color: theme.text }]}>🔄 كلمات اليوم</Text>
-                <Text style={[styles.moduleSub, { color: theme.textSecondary }]}>
-                  10 كلمات جديدة من قائمة Oxford 3000 • تتجدد كل يوم
-                </Text>
-              </View>
-              <Feather name="chevron-left" size={20} color={currentModule?.id === DAILY_MODULE_ID ? theme.primary : theme.muted} />
-            </View>
-          </Pressable>
-
-          {CURRICULUM.map((module) => {
-            const isCurrent = module.id === currentModule?.id;
-            return (
-              <Pressable
-                key={module.id}
-                style={({ pressed }) => [
-                  styles.moduleCard,
-                  {
-                    backgroundColor: isCurrent ? theme.primarySoft : theme.surface,
-                    borderColor: isCurrent ? theme.primary : theme.border,
-                    opacity: pressed ? 0.85 : 1,
-                  },
-                ]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: module.id } });
-                }}
-              >
-                <View style={styles.moduleCardContent}>
-                  <View style={styles.moduleCardRight}>
-                    {isCurrent && (
-                      <View style={[styles.currentBadge, { backgroundColor: theme.primary }]}>
-                        <Text style={styles.currentBadgeText}>الحالي</Text>
-                      </View>
-                    )}
-                    <Text style={[styles.moduleTitle, { color: theme.text }]}>{module.titleAr}</Text>
-                    <Text style={[styles.moduleSub, { color: theme.textSecondary }]}>
-                      {module.words.length} كلمة
-                    </Text>
-                  </View>
-                  <Feather name="chevron-left" size={20} color={isCurrent ? theme.primary : theme.muted} />
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Quick actions */}
+        {/* Quick actions — unchanged */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>أدوات سريعة</Text>
           <View style={styles.quickRow}>
@@ -237,15 +191,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1, shadowRadius: 8, elevation: 3,
   },
   lessonCardLeft: { flex: 1 },
-  lessonLabel: { fontSize: 12, fontFamily: 'Inter_600SemiBold', marginBottom: 4 },
+  lessonLabel: { fontSize: 12, fontFamily: 'Inter_600SemiBold', marginBottom: 4, textAlign: 'right' },
   lessonTitle: { fontSize: 20, fontFamily: 'Inter_700Bold', textAlign: 'right' },
   lessonSub: { fontSize: 13, fontFamily: 'Inter_400Regular', marginTop: 2, textAlign: 'right' },
   lessonBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
+  reviewCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 20, marginTop: 16, padding: 14,
+    borderWidth: 1, borderRadius: colors.radius,
+  },
+  reviewIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  reviewTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', textAlign: 'right' },
+  reviewSub: { fontSize: 12, fontFamily: 'Inter_400Regular', textAlign: 'right', marginTop: 2 },
   statsRow: {
-    flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginTop: 20,
+    flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginTop: 16,
   },
   statCard: {
     flex: 1, borderWidth: 1, borderRadius: colors.radius,
@@ -255,18 +217,6 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   section: { paddingHorizontal: 20, marginTop: 28, gap: 12 },
   sectionTitle: { fontSize: 17, fontFamily: 'Inter_700Bold', textAlign: 'right' },
-  moduleCard: {
-    borderWidth: 1, borderRadius: colors.radius, padding: 16,
-  },
-  moduleCardContent: { flexDirection: 'row', alignItems: 'center' },
-  moduleCardRight: { flex: 1, gap: 4 },
-  currentBadge: {
-    alignSelf: 'flex-end', paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 10, marginBottom: 4,
-  },
-  currentBadgeText: { color: '#FFFFFF', fontSize: 11, fontFamily: 'Inter_600SemiBold' },
-  moduleTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', textAlign: 'right' },
-  moduleSub: { fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'right' },
   quickRow: { flexDirection: 'row', gap: 12 },
   quickCard: {
     flex: 1, borderWidth: 1, borderRadius: colors.radius,
