@@ -1,7 +1,7 @@
 /**
  * The Oxford 3000 (American English) — CEFR-leveled core vocabulary list.
- * Source: Oxford University Press. Used to generate a fresh, non-repeating
- * batch of words for the daily lesson (see src/db/dailyWords.ts).
+ * Source: Oxford University Press. Split into a fixed 60-lesson curriculum,
+ * unlocked one lesson per week (see src/db/lessons.ts).
  * Auto-generated — do not hand edit; regenerate from the source PDF if needed.
  */
 
