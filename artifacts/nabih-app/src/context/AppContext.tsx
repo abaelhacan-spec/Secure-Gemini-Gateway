@@ -16,7 +16,10 @@ import {
   type UserProfile,
 } from '../db/database';
 import { CURRICULUM, type Module } from '../db/seed';
-import { getDailyModule, DAILY_MODULE_ID } from '../db/dailyWords';
+import {
+  getModuleByLessonId, lessonIdFromNumber, getCurrentLessonNumber,
+  recordAppOpenToday,
+} from '../db/lessons';
 import type { UserMemorySnapshot } from '@/lib/ai/prompts';
 
 const CURRENT_MODULE_KEY = '@nabih/currentModuleId';
@@ -57,14 +60,18 @@ const AppContext = createContext<AppState>({
   updateStreak: async () => {},
 });
 
-// Resolves a moduleId to a Module. The daily Oxford-3000 module is built
-// dynamically (a fresh set of 10 words per day); the rest come from the
-// static CURRICULUM.
+// Resolves a moduleId to a Module. Lesson modules ('lesson-1' .. 'lesson-60')
+// are built on demand from the fixed 60-lesson Oxford-3000 split; anything
+// else falls back to the static legacy CURRICULUM.
 async function resolveModule(moduleId: string | null): Promise<Module | null> {
-  if (moduleId === DAILY_MODULE_ID) {
-    return getDailyModule();
-  }
+  const lessonModule = moduleId ? getModuleByLessonId(moduleId) : null;
+  if (lessonModule) return lessonModule;
   return CURRICULUM.find((m) => m.id === moduleId) ?? null;
+}
+
+async function resolveDefaultModuleId(): Promise<string> {
+  const lessonNumber = await getCurrentLessonNumber();
+  return lessonIdFromNumber(lessonNumber);
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -83,14 +90,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function initialize() {
     try {
       await initDatabase();
+      // Counts "today" as a used day toward the weekly lesson-unlock
+      // schedule (idempotent — safe even if called again this session).
+      await recordAppOpenToday();
+
       const profile = await getUserProfile();
       setUserProfile(profile);
 
-      // Load current module — default to the daily Oxford-3000 module so a
-      // fresh set of words is shown instead of always the same fixed module.
-      const moduleId = await AsyncStorage.getItem(CURRENT_MODULE_KEY);
-      const module = await resolveModule(moduleId ?? DAILY_MODULE_ID);
-      setCurrentModuleState(module ?? (await getDailyModule()));
+      // Load current module — default to the user's current lesson (first
+      // unlocked-but-unfinished lesson in the 60-lesson curriculum).
+      const storedModuleId = await AsyncStorage.getItem(CURRENT_MODULE_KEY);
+      const moduleId = storedModuleId ?? (await resolveDefaultModuleId());
+      const module = await resolveModule(moduleId);
+      setCurrentModuleState(module ?? (await resolveModule(await resolveDefaultModuleId())));
 
       // Load today word count
       const today = new Date().toISOString().split('T')[0];
@@ -124,8 +136,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       onboardingCompleted: true,
       lastSessionDate: new Date().toISOString(),
     });
-    await AsyncStorage.setItem(CURRENT_MODULE_KEY, DAILY_MODULE_ID);
-    setCurrentModuleState(await getDailyModule());
+    // Today already counts as usage day 1 (recorded on init), so lesson 1
+    // is unlocked from the start — nothing else to initialize here.
+    const firstLessonId = lessonIdFromNumber(1);
+    await AsyncStorage.setItem(CURRENT_MODULE_KEY, firstLessonId);
+    setCurrentModuleState(await resolveModule(firstLessonId));
     await refreshProfile();
   }, [refreshProfile]);
 
