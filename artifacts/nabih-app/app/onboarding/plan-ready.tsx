@@ -64,8 +64,9 @@ export default function PlanReadyScreen() {
           <View style={[styles.planCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.planLabel, { color: theme.textSecondary }]}>كيف يعمل نبيه:</Text>
             {[
-              { icon: '📖', title: '10 كلمات يوميًا', sub: 'من قائمة Oxford 3000 الأساسية' },
-              { icon: '🎯', title: 'تعلّم وتدرّب واكتب', sub: 'أربع مراحل قصيرة لكل دفعة كلمات' },
+              { icon: '📖', title: '60 درسًا، 50 كلمة لكل درس', sub: 'من قائمة Oxford 3000 الأساسية' },
+              { icon: '🗓️', title: 'يُفتح درس جديد كل 7 أيام استخدام', sub: 'تُحتسب فقط الأيام التي تفتح فيها التطبيق' },
+              { icon: '🎯', title: 'تعلّم وتدرّب واكتب', sub: 'أربع مراحل قصيرة لكل درس' },
               { icon: '🔁', title: 'مراجعة ذكية متباعدة', sub: 'تعود لكل كلمة في الوقت الأمثل لتثبيتها' },
             ].map((item, index) => (
               <View key={item.title} style={styles.planRow}>
@@ -85,7 +86,7 @@ export default function PlanReadyScreen() {
           <View style={[styles.tip, { backgroundColor: theme.primarySoft }]}>
             <Feather name="zap" size={16} color={theme.primary} />
             <Text style={[styles.tipText, { color: theme.primary }]}>
-              سنبدأ بـ 10 كلمات فقط — التعلّم التدريجي يُثبّت المعرفة
+              سنبدأ بالدرس الأول — التعلّم التدريجي أسبوعًا بعد أسبوع يُثبّت المعرفة
             </Text>
           </View>
         </Animated.View>
