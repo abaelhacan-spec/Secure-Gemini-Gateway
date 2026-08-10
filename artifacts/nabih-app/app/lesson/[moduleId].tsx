@@ -10,7 +10,10 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import colors from '@/constants/colors';
 import { getModuleById, type SeedWord, type Module } from '@/src/db/seed';
-import { getDailyModule, DAILY_MODULE_ID } from '@/src/db/dailyWords';
+import {
+  getModuleByLessonId, lessonNumberFromId, isLessonUnlocked,
+  getUsageDaysRemainingForLesson, markLessonCompleted,
+} from '@/src/db/lessons';
 import {
   getDb, getWordsByIds, saveWordExplanation, completeInitialLearning,
   recordWordUsedInSentence, upsertTodayJournal, getTodayJournal,
@@ -52,18 +55,36 @@ export default function LessonScreen() {
   const { moduleId } = useLocalSearchParams<{ moduleId: string }>();
   const { buildMemorySnapshot, updateStreak } = useApp();
 
-  const isDaily = moduleId === DAILY_MODULE_ID;
+  const lessonNumber = lessonNumberFromId(moduleId ?? '');
   const [module, setModule] = useState<Module | null | undefined>(
-    isDaily ? undefined : getModuleById(moduleId ?? '')
+    lessonNumber ? getModuleByLessonId(moduleId ?? '') : getModuleById(moduleId ?? '')
   );
   const [stage, setStage] = useState<Stage>('learn');
+  const [lockState, setLockState] = useState<'checking' | 'locked' | 'unlocked'>(
+    lessonNumber ? 'checking' : 'unlocked'
+  );
+  const [daysRemaining, setDaysRemaining] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     async function loadModule() {
-      const resolved = isDaily ? await getDailyModule() : getModuleById(moduleId ?? '');
+      const resolved = lessonNumber ? getModuleByLessonId(moduleId ?? '') : getModuleById(moduleId ?? '');
       if (cancelled) return;
       setModule(resolved ?? null);
+
+      if (lessonNumber) {
+        const unlocked = await isLessonUnlocked(lessonNumber);
+        if (cancelled) return;
+        if (!unlocked) {
+          const remaining = await getUsageDaysRemainingForLesson(lessonNumber);
+          if (cancelled) return;
+          setDaysRemaining(remaining);
+          setLockState('locked');
+          return;
+        }
+        setLockState('unlocked');
+      }
+
       if (resolved) ensureWordsInDb(resolved.words, moduleId ?? '');
     }
     loadModule();
@@ -73,7 +94,7 @@ export default function LessonScreen() {
     };
   }, [moduleId]);
 
-  if (module === undefined) {
+  if (module === undefined || lockState === 'checking') {
     return (
       <View style={[styles.container, { backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }]}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -84,6 +105,22 @@ export default function LessonScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <Text style={[styles.errorText, { color: theme.text }]}>الوحدة غير موجودة</Text>
+      </View>
+    );
+  }
+  if (lockState === 'locked') {
+    return (
+      <View style={[styles.completeWrap, { backgroundColor: theme.background, paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }]}>
+        <Text style={{ fontSize: 64 }}>🔒</Text>
+        <Text style={[styles.completeTitle, { color: theme.text, fontSize: 26 }]}>{module.titleAr} مقفل</Text>
+        <Text style={[styles.completeSub, { color: theme.textSecondary }]}>
+          {daysRemaining > 0
+            ? `يفتح هذا الدرس بعد ${daysRemaining} ${daysRemaining === 1 ? 'يوم استخدام' : 'أيام استخدام'} إضافية للتطبيق\n(الأيام تُحتسب عند فتح التطبيق فعليًا، وليست أيام التقويم)`
+            : 'هذا الدرس لم يُفتح بعد'}
+        </Text>
+        <Pressable style={[styles.nextBtn, { backgroundColor: theme.primary }]} onPress={() => router.back()}>
+          <Text style={styles.nextBtnText}>العودة</Text>
+        </Pressable>
       </View>
     );
   }
@@ -146,7 +183,7 @@ export default function LessonScreen() {
         />
       )}
       {stage === 'complete' && (
-        <CompleteStage theme={theme} module={module} insets={insets} />
+        <CompleteStage theme={theme} module={module} insets={insets} lessonNumber={lessonNumber} />
       )}
     </View>
   );
@@ -673,7 +710,11 @@ function WritingStage({
 
 // ─── Stage 4: Complete ──────────────────────────────────────────────────────────
 
-function CompleteStage({ theme, module, insets }: { theme: any; module: Module; insets: any }) {
+function CompleteStage({
+  theme, module, insets, lessonNumber,
+}: {
+  theme: any; module: Module; insets: any; lessonNumber: number | null;
+}) {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -688,6 +729,9 @@ function CompleteStage({ theme, module, insets }: { theme: any; module: Module; 
       await upsertTodayJournal({
         wordsLearned: Array.from(new Set([...(journal?.wordsLearned ?? []), ...module.words.map((w) => w.word)])),
       });
+      if (lessonNumber) {
+        await markLessonCompleted(lessonNumber);
+      }
       if (!cancelled) setDone(true);
     }
     finish();
