@@ -44,6 +44,10 @@ function RootLayoutNav() {
         options={{ presentation: 'modal', headerShown: false }}
       />
       <Stack.Screen
+        name="lessons/index"
+        options={{ presentation: 'modal', headerShown: false }}
+      />
+      <Stack.Screen
         name="sentence-builder"
         options={{ presentation: 'modal', headerShown: false }}
       />
