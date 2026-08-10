@@ -10,7 +10,9 @@ import colors from '@/constants/colors';
 import { useApp } from '@/src/context/AppContext';
 import { getMasteryStats } from '@/src/db/database';
 import { OXFORD_3000 } from '@/src/db/oxford3000';
-import { DAILY_MODULE_ID } from '@/src/db/dailyWords';
+import {
+  getCurrentLessonNumber, lessonIdFromNumber, getUnlockedLessonCount, TOTAL_LESSONS,
+} from '@/src/db/lessons';
 
 const TOTAL_OXFORD_WORDS = OXFORD_3000.length;
 
@@ -23,6 +25,8 @@ export default function HomeScreen() {
   const [masteredCount, setMasteredCount] = useState(0);
   const [dueReviewCount, setDueReviewCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentLessonNumber, setCurrentLessonNumber] = useState(1);
+  const [unlockedLessonCount, setUnlockedLessonCount] = useState(1);
 
   const loadStats = useCallback(async () => {
     const stats = await getMasteryStats();
@@ -30,20 +34,35 @@ export default function HomeScreen() {
     setDueReviewCount(stats.dueReviewCount);
   }, []);
 
+  const loadLessonProgress = useCallback(async () => {
+    const [current, unlocked] = await Promise.all([
+      getCurrentLessonNumber(),
+      getUnlockedLessonCount(),
+    ]);
+    setCurrentLessonNumber(current);
+    setUnlockedLessonCount(unlocked);
+  }, []);
+
   useEffect(() => {
     loadStats();
+    loadLessonProgress();
     updateStreak();
   }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadStats(), refreshProfile()]);
+    await Promise.all([loadStats(), loadLessonProgress(), refreshProfile()]);
     setRefreshing(false);
-  }, [loadStats, refreshProfile]);
+  }, [loadStats, loadLessonProgress, refreshProfile]);
 
   const handleStartLesson = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: DAILY_MODULE_ID } });
+    router.push({ pathname: '/lesson/[moduleId]', params: { moduleId: lessonIdFromNumber(currentLessonNumber) } });
+  };
+
+  const handleViewAllLessons = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/lessons');
   };
 
   const handleStartReview = () => {
@@ -78,7 +97,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Today's 10 words */}
+          {/* Continue with the current unlocked lesson */}
           <Pressable
             style={({ pressed }) => [
               styles.lessonCard,
@@ -87,9 +106,11 @@ export default function HomeScreen() {
             onPress={handleStartLesson}
           >
             <View style={styles.lessonCardLeft}>
-              <Text style={[styles.lessonLabel, { color: theme.primary }]}>كلمات اليوم</Text>
+              <Text style={[styles.lessonLabel, { color: theme.primary }]}>
+                الدرس {currentLessonNumber} من {TOTAL_LESSONS}
+              </Text>
               <Text style={[styles.lessonTitle, { color: theme.text }]}>
-                {currentModule?.words.length ?? 10} كلمات من Oxford 3000
+                {currentModule?.words.length ?? 50} كلمة من Oxford 3000
               </Text>
               <Text style={[styles.lessonSub, { color: theme.textSecondary }]}>
                 تعلّم • تدرّب • اكتب • تحدّث
@@ -98,6 +119,17 @@ export default function HomeScreen() {
             <View style={[styles.lessonBtn, { backgroundColor: theme.primary }]}>
               <Feather name="play" size={20} color="#FFFFFF" />
             </View>
+          </Pressable>
+
+          {/* Link to the full 60-lesson roadmap */}
+          <Pressable
+            style={({ pressed }) => [styles.allLessonsRow, { opacity: pressed ? 0.8 : 1 }]}
+            onPress={handleViewAllLessons}
+          >
+            <Text style={styles.allLessonsText}>
+              {unlockedLessonCount} من {TOTAL_LESSONS} درس مفتوح — عرض كل الدروس
+            </Text>
+            <Feather name="chevron-left" size={16} color="#FFFFFF" />
           </Pressable>
         </View>
 
@@ -198,6 +230,11 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
+  allLessonsRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 6,
+  },
+  allLessonsText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontFamily: 'Inter_500Medium' },
   reviewCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     marginHorizontal: 20, marginTop: 16, padding: 14,
