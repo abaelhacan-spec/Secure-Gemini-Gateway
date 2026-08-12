@@ -12,7 +12,7 @@ import colors from '@/constants/colors';
 import { getModuleById, type SeedWord, type Module } from '@/src/db/seed';
 import {
   getModuleByLessonId, lessonNumberFromId, isLessonUnlocked,
-  getUsageDaysRemainingForLesson, markLessonCompleted,
+  getUsageDaysRemainingForLesson, markLessonCompleted, getCompletedLessons,
 } from '@/src/db/lessons';
 import {
   getDb, getWordsByIds, saveWordExplanation, completeInitialLearning,
@@ -716,23 +716,38 @@ function CompleteStage({
   theme: any; module: Module; insets: any; lessonNumber: number | null;
 }) {
   const [done, setDone] = useState(false);
+  const [wasAlreadyCompleted, setWasAlreadyCompleted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function finish() {
-      // Every word from today's lesson enters the spaced-repetition queue now,
-      // regardless of practice performance — first review is tomorrow.
-      for (const w of module.words) {
-        await completeInitialLearning(w.id);
+      // If this lesson was already finished before, the user is just
+      // revisiting/practicing it again — don't touch SRS scheduling, word
+      // mastery, or the journal a second time, so their progress on those
+      // words (e.g. already-mastered words) isn't reset or overwritten.
+      const alreadyCompleted = lessonNumber
+        ? (await getCompletedLessons()).includes(lessonNumber)
+        : false;
+
+      if (!alreadyCompleted) {
+        // First time completing this lesson: every word enters the
+        // spaced-repetition queue now — first review is tomorrow.
+        for (const w of module.words) {
+          await completeInitialLearning(w.id);
+        }
+        const journal = await getTodayJournal();
+        await upsertTodayJournal({
+          wordsLearned: Array.from(new Set([...(journal?.wordsLearned ?? []), ...module.words.map((w) => w.word)])),
+        });
+        if (lessonNumber) {
+          await markLessonCompleted(lessonNumber);
+        }
       }
-      const journal = await getTodayJournal();
-      await upsertTodayJournal({
-        wordsLearned: Array.from(new Set([...(journal?.wordsLearned ?? []), ...module.words.map((w) => w.word)])),
-      });
-      if (lessonNumber) {
-        await markLessonCompleted(lessonNumber);
+
+      if (!cancelled) {
+        setWasAlreadyCompleted(alreadyCompleted);
+        setDone(true);
       }
-      if (!cancelled) setDone(true);
     }
     finish();
     return () => {
@@ -742,11 +757,14 @@ function CompleteStage({
 
   return (
     <View style={[styles.completeWrap, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 40 }]}>
-      <Text style={{ fontSize: 64 }}>🎉</Text>
-      <Text style={[styles.completeTitle, { color: theme.text }]}>أحسنت!</Text>
+      <Text style={{ fontSize: 64 }}>{wasAlreadyCompleted ? '👏' : '🎉'}</Text>
+      <Text style={[styles.completeTitle, { color: theme.text }]}>
+        {wasAlreadyCompleted ? 'أحسنت في المراجعة!' : 'أحسنت!'}
+      </Text>
       <Text style={[styles.completeSub, { color: theme.textSecondary }]}>
-        أتممت مراحل التعلّم والتدريب والكتابة لكلمات اليوم{'\n'}
-        دخلت {module.words.length} كلمات في جدول المراجعة الذكي
+        {wasAlreadyCompleted
+          ? `راجعت ${module.words.length} كلمة من هذا الدرس\nهذا لا يؤثر على جدول مراجعتك الذكي أو تقدّمك`
+          : `أتممت مراحل التعلّم والتدريب والكتابة لكلمات اليوم\nدخلت ${module.words.length} كلمات في جدول المراجعة الذكي`}
       </Text>
       <View style={[styles.completeWords, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         {module.words.map((w) => (
